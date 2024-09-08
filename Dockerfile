@@ -1,21 +1,28 @@
-FROM golang:1.18.1-alpine3.15 as builder
+FROM golang:1.22-alpine3.20 as build
 
 LABEL maintainer="erguotou525@gmail.compute"
 
-RUN apk --no-cache add git libc-dev gcc
-RUN go install github.com/mjibson/esc@latest # TODO: Consider using native file embedding
+ENV CGO_ENABLED=1
 
-COPY . /go/src/github.com/mailslurper/mailslurper
-WORKDIR /go/src/github.com/mailslurper/mailslurper/cmd/mailslurper
+RUN apk update
+RUN apk add git libc-dev gcc
 
-RUN go get
-RUN go generate
-RUN go build
+WORKDIR /build/
 
-FROM alpine:3.15
+COPY . .
+
+RUN go install github.com/mjibson/esc@latest
+
+RUN go mod download
+RUN go generate ./...
+RUN go build -o mailslurper ./cmd/mailslurper/
+
+FROM alpine:3.20
+
+WORKDIR /opt/mailslurper/
 
 RUN apk add --no-cache ca-certificates \
- && echo -e '{\n\
+  && echo -e '{\n\
   "wwwAddress": "0.0.0.0",\n\
   "wwwPort": 8080,\n\
   "wwwPublicURL": "",\n\
@@ -39,8 +46,8 @@ RUN apk add --no-cache ca-certificates \
   }'\
   >> config.json
 
-COPY --from=builder /go/src/github.com/mailslurper/mailslurper/cmd/mailslurper/mailslurper mailslurper
+COPY --from=build /build/mailslurper mailslurper
 
 EXPOSE 8080 8085 2500
 
-CMD ["./mailslurper"]
+ENTRYPOINT ["/opt/mailslurper/mailslurper"]
